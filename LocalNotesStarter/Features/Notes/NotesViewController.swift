@@ -2,6 +2,11 @@ import UIKit
 
 final class NotesViewController: UIViewController {
     private var notes: [Note] = []
+    private var notesFileUrl: URL {
+        let documentsFolder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        
+        return documentsFolder.appendingPathComponent("notes.json")
+    }
 
     private let tableView: UITableView = {
         let tableView = UITableView(frame: .zero, style: .insetGrouped)
@@ -55,9 +60,32 @@ final class NotesViewController: UIViewController {
     }
 
     private func loadNotes() {
+        guard  FileManager.default.fileExists(atPath: notesFileUrl.path) else { return }
+        do {
+            let data = try Data(contentsOf: notesFileUrl)
+            
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            notes = try decoder.decode([Note].self, from: data)
+            tableView.reloadData()
+            updateEmptyState()
+        }catch{
+            showAlert(title: "Show Load notes", message: error.localizedDescription)
+        }
+       
     }
 
     private func saveNotes() {
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            encoder.dateEncodingStrategy = .iso8601
+            
+            let data = try encoder.encode(notes)
+           try data.write(to: notesFileUrl,options: .atomic)
+        }catch {
+            showAlert(title: "Show Save", message: error.localizedDescription)
+        }
     }
 
     private func updateEmptyState() {

@@ -1,6 +1,6 @@
 import Foundation
 
-struct Note {
+struct Note: Codable {
     let id: UUID
     let title: String
     let text: String
