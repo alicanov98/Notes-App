@@ -1,12 +1,13 @@
 import UIKit
 
 final class NotesViewController: UIViewController {
-    private var notes: [Note] = []
-    private var notesFileUrl: URL {
-        let documentsFolder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        
-        return documentsFolder.appendingPathComponent("notes.json")
-    }
+
+    // MARK: - Properties
+    
+    private let viewModel: NotesViewModelProtocol
+    
+    
+    // MARK: - UI Components
 
     private let tableView: UITableView = {
         let tableView = UITableView(frame: .zero, style: .insetGrouped)
@@ -24,10 +25,24 @@ final class NotesViewController: UIViewController {
         return label
     }()
 
+    // MARK: - Initialization
+    
+    init(viewModel: NotesViewModelProtocol){
+        self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
+    
+    // MARK: - Lifecycle
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         configureUI()
-        loadNotes()
+        configureBindings()
+        viewModel.loadNotes()
     }
 
     private func configureUI() {
@@ -59,55 +74,48 @@ final class NotesViewController: UIViewController {
         updateEmptyState()
     }
 
-    private func loadNotes() {
-        guard  FileManager.default.fileExists(atPath: notesFileUrl.path) else { return }
-        do {
-            let data = try Data(contentsOf: notesFileUrl)
-            
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            notes = try decoder.decode([Note].self, from: data)
-            tableView.reloadData()
-            updateEmptyState()
-        }catch{
-            showAlert(title: "Show Load notes", message: error.localizedDescription)
-        }
-       
-    }
 
-    private func saveNotes() {
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
-            encoder.dateEncodingStrategy = .iso8601
+    private func configureBindings(){
+        viewModel.onNotesChange = { [weak self] in
+            guard let self else {return}
             
-            let data = try encoder.encode(notes)
-           try data.write(to: notesFileUrl,options: .atomic)
-        }catch {
-            showAlert(title: "Show Save", message: error.localizedDescription)
+            self.tableView.reloadData()
+            self.updateEmptyState()
+        }
+        
+        viewModel.onError = { [weak self] message in
+            self?.showAlert(title: "Error", message: message)
         }
     }
-
-    private func updateEmptyState() {
-        emptyLabel.isHidden = !notes.isEmpty
+    
+    // MARK: - UI Updates
+    
+    private func updateEmptyState(){
+        emptyLabel.isHidden = !viewModel.isEmpty
     }
-
+    
+    // MARK: - Actions
+    
     @objc
-    private func addTapped() {
-        let controller = AddNoteViewController()
-        controller.onSave = { [weak self] note in
-            self?.notes.append(note)
-            self?.saveNotes()
-            self?.tableView.reloadData()
-            self?.updateEmptyState()
-        }
-        navigationController?.pushViewController(controller, animated: true)
+    private func addTapped(){
+        let addNotesViewModel = AddNotesViewModel()
+        
+        let controller = AddNoteViewController(viewModel: addNotesViewModel)
+        
+        controller.delegate = self
+        
+        navigationController?.pushViewController(controller,animated: true)
     }
+    
 }
+
+
+// MARK: - UITableViewDataSource
+
 
 extension NotesViewController: UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        notes.count
+        viewModel.numberOfNotes
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -117,11 +125,16 @@ extension NotesViewController: UITableViewDataSource {
         ) as? NoteCell else {
             return UITableViewCell()
         }
-
-        cell.configure(with: notes[indexPath.row])
+        
+        let note = viewModel.note(at: indexPath.row)
+        cell.configure(with: note)
         return cell
     }
 }
+
+
+// MARK: - UITableViewDelegate
+
 
 extension NotesViewController: UITableViewDelegate {
     func tableView(
@@ -129,13 +142,23 @@ extension NotesViewController: UITableViewDelegate {
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
         let deleteAction = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, completion in
-            self?.notes.remove(at: indexPath.row)
-            self?.saveNotes()
-            tableView.deleteRows(at: [indexPath], with: .automatic)
-            self?.updateEmptyState()
+            guard let self else {
+                completion(false)
+                return
+            }
+            self.viewModel.deleteNote(at: indexPath.row)
             completion(true)
         }
 
         return UISwipeActionsConfiguration(actions: [deleteAction])
+    }
+}
+
+// MARK: - AddNoteViewControllerDelegate
+
+
+extension NotesViewController: AddNoteViewControllerDelegate {
+    func addNoteViewController(_ controller: AddNoteViewController, didCreate note: Note) {
+        viewModel.addNote(note)
     }
 }

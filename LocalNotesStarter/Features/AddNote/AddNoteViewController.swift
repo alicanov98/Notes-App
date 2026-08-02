@@ -1,8 +1,26 @@
 import UIKit
 
-final class AddNoteViewController: UIViewController {
-    var onSave: ((Note) -> Void)?
 
+protocol AddNoteViewControllerDelegate: AnyObject {
+    func addNoteViewController(
+        _ controller: AddNoteViewController,
+        didCreate note: Note
+    )
+}
+
+final class AddNoteViewController: UIViewController {
+    
+    // MARK: - Delegate
+    
+    weak var delegate: AddNoteViewControllerDelegate?
+    
+    // MARK: - Properties
+    
+    private let addNotesViewModel: AddNotesViewModel
+    
+    
+    // MARK: - UI Components
+    
     private let titleField: UITextField = {
         let field = UITextField()
         field.placeholder = "Title"
@@ -21,14 +39,33 @@ final class AddNoteViewController: UIViewController {
         return view
     }()
 
+
+
+    // MARK: - Initialization
+    
+    init(viewModel:AddNotesViewModel) {
+        self.addNotesViewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
+    
+    // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
+        
         configureUI()
+        configureBindings()
     }
-
+    
+    // MARK: - Configuration
+    
     private func configureUI() {
         title = "New Note"
         view.backgroundColor = .systemBackground
+        
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .save,
             target: self,
@@ -50,22 +87,25 @@ final class AddNoteViewController: UIViewController {
         ])
     }
 
+    private func configureBindings() {
+        addNotesViewModel.onNoteCreated = { [weak self] note in
+            guard let self else { return }
+            
+            delegate?.addNoteViewController(self, didCreate: note)
+            
+            navigationController?.popViewController(animated: true)
+        }
+        
+        addNotesViewModel.onError = {[weak self] message in
+            self?.showAlert(title: "Missing Title", message: message)
+        }
+    }
+    
     @objc
     private func saveTapped() {
-        let title = titleField.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !title.isEmpty else {
-            showAlert(title: "Missing Title", message: "Enter a title before saving.")
-            return
-        }
-
-        let note = Note(
-            id: UUID(),
-            title: title,
-            text: textView.text.trimmingCharacters(in: .whitespacesAndNewlines),
-            createdAt: Date()
-        )
-
-        onSave?(note)
-        navigationController?.popViewController(animated: true)
+        addNotesViewModel.saveNote(title: titleField.text, text: textView.text)
     }
 }
+
+
+
